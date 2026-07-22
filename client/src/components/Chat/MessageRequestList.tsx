@@ -1,27 +1,7 @@
 import { Mail } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 
-interface MessageData {
-  id: number;
-  senderId: number;
-  receiverId: number;
-  content: string;
-  isMessageRequest: boolean;
-  readAt: string | null;
-  createdAt: string;
-  sender?: { id: number; name: string; email: string; profilePicture?: string };
-  receiver?: { id: number; name: string; email: string; profilePicture?: string };
-}
-
-interface MessageRequestGroup {
-  sender: { id: number; name: string; email: string; profilePicture?: string };
-  messages: MessageData[];
-}
-
-interface MessageRequestListProps {
-  messageRequests: MessageRequestGroup[];
-  onBack: () => void;
-}
+import type { MessageRequestListProps } from "@/types/chat";
 
 export default function MessageRequestList({ messageRequests, onBack }: MessageRequestListProps) {
   return (

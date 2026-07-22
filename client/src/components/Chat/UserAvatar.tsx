@@ -1,11 +1,5 @@
 import Image from "next/image";
-
-interface UserAvatarProps {
-  name: string;
-  profilePicture?: string;
-  size?: number;
-  className?: string;
-}
+import type { UserAvatarProps } from "@/types/chat";
 
 export default function UserAvatar({ name, profilePicture, size = 40, className = "" }: UserAvatarProps) {
   if (profilePicture) {

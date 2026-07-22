@@ -1,24 +1,6 @@
 import { Search, UserPlus, UserCheck, Clock, UserX, Loader2 } from "lucide-react";
 import UserAvatar from "./UserAvatar";
-
-interface SearchedUser {
-  id: number;
-  name: string;
-  email: string;
-  profilePicture?: string;
-  friendshipStatus: 'none' | 'pending_sent' | 'pending_received' | 'friends';
-}
-
-interface SearchPanelProps {
-  searchQuery: string;
-  searchResults: SearchedUser[];
-  searchLoading: boolean;
-  searchDone: boolean;
-  onSearch: (q: string) => void;
-  onSelect: (user: { id: number; name: string; email: string; profilePicture?: string }) => void;
-  onSendRequest: (receiverId: number) => void;
-  onBack: () => void;
-}
+import type { SearchedUser, SearchPanelProps } from "@/types/chat";
 
 export default function SearchPanel({
   searchQuery, searchResults, searchLoading, searchDone,

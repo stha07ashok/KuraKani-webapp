@@ -1,21 +1,7 @@
 import { Users, Loader2 } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 
-interface Friend {
-  id: number;
-  name: string;
-  email: string;
-  profilePicture?: string;
-  friendRequestId: number;
-}
-
-interface FriendListProps {
-  friends: Friend[];
-  loading: boolean;
-  selectedFriendId?: number;
-  unreadCounts: Record<number, number>;
-  onSelect: (friend: Friend) => void;
-}
+import type { FriendListProps } from "@/types/chat";
 
 export default function FriendList({ friends, loading, selectedFriendId, unreadCounts, onSelect }: FriendListProps) {
   if (loading) {

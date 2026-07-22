@@ -1,19 +1,7 @@
 import { UserPlus, UserCheck, Clock } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 
-interface SearchedUser {
-  id: number;
-  name: string;
-  email: string;
-  profilePicture?: string;
-  friendshipStatus: 'none' | 'pending_sent' | 'pending_received' | 'friends';
-}
-
-interface SearchSuggestionsProps {
-  results: SearchedUser[];
-  onSelect: (user: { id: number; name: string; email: string; profilePicture?: string }) => void;
-  onSendRequest: (receiverId: number) => void;
-}
+import type { SearchedUser, SearchSuggestionsProps } from "@/types/chat";
 
 export default function SearchSuggestions({ results, onSelect, onSendRequest }: SearchSuggestionsProps) {
   if (results.length === 0) return null;

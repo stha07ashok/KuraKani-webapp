@@ -1,39 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ArrowLeft, MessageCircle, Send, Loader2, Check, X, CornerUpLeft, MoreVertical, Pencil, Trash2, ChevronRight, ChevronLeft } from "lucide-react";
+import { ArrowLeft, MessageCircle, Send, Loader2, Check, X, CornerUpLeft, MoreVertical, Pencil, Trash2, ChevronRight } from "lucide-react";
 import UserAvatar from "./UserAvatar";
-
-interface MessageData {
-  id: number;
-  senderId: number;
-  receiverId: number;
-  content: string;
-  isMessageRequest: boolean;
-  readAt: string | null;
-  createdAt: string;
-  deletedAt?: string | null;
-  deletedForSenderAt?: string | null;
-  deletedForReceiverAt?: string | null;
-  editedAt?: string | null;
-  sender?: { id: number; name: string; email: string; profilePicture?: string };
-  receiver?: { id: number; name: string; email: string; profilePicture?: string };
-  replyTo?: {
-    id: number;
-    content: string;
-    sender?: { id: number; name: string; profilePicture?: string };
-  };
-}
-
-interface ChatAreaProps {
-  friend: { id: number; name: string; email: string; profilePicture?: string };
-  messages: MessageData[];
-  loading: boolean;
-  currentUserId: number;
-  onSend: (content: string, replyToMessageId?: number | null) => void;
-  onUnsend: (messageId: number, mode: 'me' | 'everyone') => void;
-  onHideUnsent: (messageId: number) => void;
-  onEdit: (messageId: number, content: string) => void;
-  onBack: () => void;
-}
+import type { MessageData, ChatAreaProps } from "@/types/chat";
 
 export default function ChatArea({ friend, messages, loading, currentUserId, onSend, onUnsend, onHideUnsent, onEdit, onBack }: ChatAreaProps) {
   const [text, setText] = useState("");

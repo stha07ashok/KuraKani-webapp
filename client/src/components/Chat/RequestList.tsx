@@ -1,20 +1,6 @@
 import { UserPlus, Check, X } from "lucide-react";
 import UserAvatar from "./UserAvatar";
-
-interface PendingRequest {
-  id: number;
-  senderId: number;
-  status: string;
-  sender: { id: number; name: string; email: string; profilePicture?: string };
-  createdAt: string;
-}
-
-interface RequestListProps {
-  pendingRequests: PendingRequest[];
-  onAccept: (requestId: number) => void;
-  onReject: (requestId: number) => void;
-  onBack: () => void;
-}
+import type { RequestListProps } from "@/types/chat";
 
 export default function RequestList({ pendingRequests, onAccept, onReject, onBack }: RequestListProps) {
   return (

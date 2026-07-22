@@ -1,19 +1,6 @@
 import { useEffect, useState } from "react";
 import { X, MessageCircle } from "lucide-react";
-
-export interface ToastNotification {
-  id: number;
-  senderId: number;
-  senderName: string;
-  senderPicture?: string;
-  content: string;
-}
-
-interface NotificationToastProps {
-  notification: ToastNotification | null;
-  onClose: () => void;
-  onClick: (senderId: number) => void;
-}
+import type { ToastNotification, NotificationToastProps } from "@/types/chat";
 
 export default function NotificationToast({ notification, onClose, onClick }: NotificationToastProps) {
   const [visible, setVisible] = useState(false);
