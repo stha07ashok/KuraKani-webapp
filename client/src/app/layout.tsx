@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import ThemeProvider from "@/components/ThemeProvider";
 import AuthProvider from "@/contexts/AuthContext";
+import AutoRefresh from "@/components/AutoRefresh";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({
       <body className="h-full flex flex-col bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
         <ThemeProvider>
           <AuthProvider>
+            <AutoRefresh />
             <Navbar />
             {children}
             <Footer />

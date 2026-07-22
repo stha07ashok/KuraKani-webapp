@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { getSocket, disconnectSocket } from "@/lib/socket";
 import { Loader2 } from "lucide-react";
 import SearchPanel from "@/components/Chat/SearchPanel";
 import RequestList from "@/components/Chat/RequestList";
@@ -12,239 +11,103 @@ import ChatArea from "@/components/Chat/ChatArea";
 import ChatSidebar from "@/components/Chat/ChatSidebar";
 import ChatEmptyState from "@/components/Chat/ChatEmptyState";
 import NotificationToast from "@/components/Chat/NotificationToast";
-import type { SearchedUser, Friend, PendingRequest, MessageData, MessageRequestGroup, ToastNotification } from "@/types/chat";
-
-type SidebarView = 'chats' | 'search' | 'friendRequests' | 'messageRequests';
+import CallOverlay from "@/components/Chat/CallOverlay";
+import IncomingCallDialog from "@/components/Chat/IncomingCallDialog";
+import { useCall, type CallType } from "@/hooks/useCall";
+import { useChatSocket } from "@/hooks/useChatSocket";
+import { useChatActions } from "@/hooks/useChatActions";
+import type { Friend, MessageData, BaseUser } from "@/types/chat";
 
 export default function ChatPage() {
   const router = useRouter();
   const { user, loading, signOut, getToken } = useAuth();
-  const socketRef = useRef<any>(null);
+
   const friendsRef = useRef<Friend[]>([]);
   const selectedFriendRef = useRef<Friend | null>(null);
-  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [sidebarView, setSidebarView] = useState<SidebarView>('chats');
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+  const {
+    socketRef, socket, messages, setMessages,
+    unreadCounts, setUnreadCounts, toast, setToast,
+  } = useChatSocket({ userId: user?.id ?? 0, getToken, selectedFriendRef, friendsRef });
+
+  const {
+    sidebarView, setSidebarView,
+    friends, setFriends,
+    selectedFriend, setSelectedFriend,
+    friendsLoading, setFriendsLoading,
+    searchQuery, setSearchQuery,
+    searchResults, setSearchResults,
+    searchLoading, searchDone, setSearchDone,
+    pendingRequests, setPendingRequests,
+    messageRequests,
+    callLogs, setCallLogs, messagesLoading,
+    fetchFriends, fetchPendingRequests, fetchMessageRequests, fetchUnreadCounts: fetchUnreadCountsAction,
+    doSearch, handleSearch, handleSidebarSearch,
+    handleSendRequest, handleAccept, handleReject,
+    selectFriend,
+    handleUnsendMessage, handleHideUnsent, handleSendMessage, handleEditMessage,
+    handleToastClick: handleToastClickAction, backToChats, searchTimerRef,
+  } = useChatActions({ getToken, friendsRef, selectedFriendRef });
 
   friendsRef.current = friends;
   selectedFriendRef.current = selectedFriend;
-  const [friendsLoading, setFriendsLoading] = useState(true);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchedUser[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchDone, setSearchDone] = useState(false);
+  const [incomingCall, setIncomingCall] = useState<{ callerId: number; callerName: string; type: CallType } | null>(null);
 
-  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
-  const [messageRequests, setMessageRequests] = useState<MessageRequestGroup[]>([]);
-
-  const [messages, setMessages] = useState<MessageData[]>([]);
-  const [messagesLoading, setMessagesLoading] = useState(false);
-  const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
-  const [toast, setToast] = useState<ToastNotification | null>(null);
+  const {
+    callState, localStream, remoteStream,
+    startCall, acceptCall, rejectCall, endCall,
+    toggleMute, toggleVideo, toggleScreenShare,
+  } = useCall({
+    userId: user?.id ?? 0,
+    socket,
+    onIncomingCall: (data) => setIncomingCall(data),
+    onMediaError: (error) => {
+      setToast({
+        id: Date.now(),
+        senderId: 0,
+        senderName: '',
+        senderPicture: undefined,
+        content: error === 'no-device'
+          ? 'No microphone found. Connect a microphone to make calls.'
+          : 'Microphone access denied. Allow microphone permission to make calls.',
+      });
+    },
+  });
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const token = await getToken();
-      if (!token) return;
-      const socket = getSocket(token);
-      socketRef.current = socket;
-
-      socket.on("new_message", (msg: MessageData) => {
-        const curFriend = selectedFriendRef.current;
-        if (curFriend && msg.senderId === curFriend.id) {
-          setMessages((prev) => [...prev, msg]);
-          socket.emit("mark_as_read", { friendId: curFriend.id });
-        } else {
-          setUnreadCounts((prev) => ({ ...prev, [msg.senderId]: (prev[msg.senderId] || 0) + 1 }));
-          const friend = friendsRef.current.find((f) => f.id === msg.senderId);
-          if (friend) {
-            setToast({ id: msg.id, senderId: msg.senderId, senderName: friend.name, senderPicture: friend.profilePicture, content: msg.content });
-          }
-        }
-      });
-
-      socket.on("message_sent", (msg: MessageData) => {
-        setMessages((prev) => {
-          const hasTempMessage = prev.some((m) => m.senderId === msg.senderId && m.content === msg.content && m.id !== msg.id);
-          if (hasTempMessage) {
-            return prev.map((m) => (m.senderId === msg.senderId && m.content === msg.content && m.id !== msg.id) ? msg : m);
-          }
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-      });
-
-      socket.on("messages_read", (data: { readerId: number }) => {
-        const curFriend = selectedFriendRef.current;
-        if (!curFriend || data.readerId !== curFriend.id) return;
-        setMessages((prev) => prev.map((msg) => (
-          msg.senderId === user.id && msg.receiverId === data.readerId && !msg.readAt
-            ? { ...msg, readAt: new Date().toISOString() }
-            : msg
-        )));
-      });
-
-      socket.on("message_unsent", (data: { messageId: number; mode: 'me' | 'everyone' }) => {
-        setMessages((prev) =>
-          data.mode === 'everyone'
-            ? prev.map((msg) =>
-                msg.id === data.messageId
-                  ? { ...msg, deletedAt: new Date().toISOString(), content: 'This message was unsent' }
-                  : msg
-              )
-            : prev.filter((msg) => msg.id !== data.messageId)
-        );
-      });
-
-      socket.on('message_unsent_hidden', (data: { messageId: number }) => {
-        setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
-      });
-
-      socket.on('message_edited', (data: { messageId: number; content: string; editedAt: string }) => {
-        setMessages((prev) => prev.map((msg) =>
-          msg.id === data.messageId ? { ...msg, content: data.content, editedAt: data.editedAt } : msg
-        ));
-      });
-
-      socket.on('message_deleted', (data: { messageId: number }) => {
-        setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
-      });
-    })();
-    return () => disconnectSocket();
-  }, [user, getToken]);
-
-  const apiFetch = useCallback(async (url: string, options?: RequestInit) => {
-    const token = await getToken();
-    if (!token) return null;
-    const res = await fetch(url, {
-      ...options,
-      headers: { ...options?.headers, "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    });
-    if (!res.ok) return null;
-    return res.json();
-  }, [getToken]);
-
-  const fetchFriends = useCallback(async () => {
-    setFriendsLoading(true);
-    const data = await apiFetch("/api/friend-requests/friends");
-    if (data) setFriends(data);
-    setFriendsLoading(false);
-  }, [apiFetch]);
-
-  const fetchPendingRequests = useCallback(async () => {
-    const data = await apiFetch("/api/friend-requests/pending");
-    if (data) setPendingRequests(data);
-  }, [apiFetch]);
-
-  const fetchMessageRequests = useCallback(async () => {
-    const data = await apiFetch("/api/messages/requests");
-    if (data) setMessageRequests(data);
-  }, [apiFetch]);
-
-  const fetchUnreadCounts = useCallback(async () => {
-    const data = await apiFetch("/api/messages/unread/counts");
-    if (data) setUnreadCounts(data);
-  }, [apiFetch]);
-
-  useEffect(() => {
     if (user) {
       fetchFriends();
       fetchPendingRequests();
       fetchMessageRequests();
-      fetchUnreadCounts();
+      fetchUnreadCountsAction((data) => setUnreadCounts(data));
     }
-  }, [user, fetchFriends, fetchPendingRequests, fetchMessageRequests, fetchUnreadCounts]);
-
-  const doSearch = useCallback(async (q: string) => {
-    setSearchLoading(true);
-    setSearchDone(false);
-    const data = await apiFetch(`/api/users/search?q=${encodeURIComponent(q)}`);
-    const uniqueResults = (data ?? []).filter((item: SearchedUser, index: number, self: SearchedUser[]) => self.findIndex((u) => u.id === item.id) === index);
-    setSearchResults(uniqueResults);
-    setSearchDone(true);
-    setSearchLoading(false);
-  }, [apiFetch]);
-
-  const handleSearch = useCallback((q: string) => {
-    setSearchQuery(q);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (!q.trim()) { setSearchResults([]); setSearchDone(false); return; }
-    setSidebarView('search');
-    searchTimerRef.current = setTimeout(() => doSearch(q), 300);
-  }, [doSearch]);
+  }, [user, fetchFriends, fetchPendingRequests, fetchMessageRequests, fetchUnreadCountsAction]);
 
   useEffect(() => {
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
   }, []);
 
-  const handleSendRequest = async (receiverId: number) => {
-    const data = await apiFetch("/api/friend-requests", {
-      method: "POST",
-      body: JSON.stringify({ receiverId }),
+  const onSelectFriend = async (friend: BaseUser) => {
+    if (toast?.senderId === friend.id) setToast(null);
+    const messagesData = await selectFriend(friend, socketRef, (friendId) => {
+      setUnreadCounts((prev) => ({ ...prev, [friendId]: 0 }));
     });
-    if (data) {
-      setSearchResults((prev) =>
-        prev.map((u) => u.id === receiverId ? { ...u, friendshipStatus: 'pending_sent' as const } : u)
-      );
+    if (messagesData.length > 0) {
+      setMessages(messagesData);
     }
   };
 
-  const handleAccept = async (requestId: number) => {
-    await apiFetch(`/api/friend-requests/${requestId}/accept`, { method: "PUT" });
-    fetchPendingRequests();
-    fetchFriends();
+  const onToastClick = (senderId: number) => {
+    setToast(null);
+    handleToastClickAction(senderId, onSelectFriend);
   };
 
-  const handleReject = async (requestId: number) => {
-    await apiFetch(`/api/friend-requests/${requestId}/reject`, { method: "PUT" });
-    fetchPendingRequests();
-  };
-
-  const selectFriend = async (friend: { id: number; name: string; email: string; profilePicture?: string }) => {
-    setSelectedFriend(friend as Friend);
-    setSidebarView('chats');
-    setSearchQuery('');
-    setSearchResults([]);
-    setSearchDone(false);
-    setMessagesLoading(true);
-    setUnreadCounts((prev) => ({ ...prev, [friend.id]: 0 }));
-    const data = await apiFetch(`/api/messages/${friend.id}`);
-    if (data) setMessages(data);
-    setMessagesLoading(false);
-    if (socketRef.current) {
-      socketRef.current.emit('mark_as_read', { friendId: friend.id });
-    }
-  };
-
-  const handleUnsendMessage = (messageId: number, mode: 'me' | 'everyone') => {
-    if (!socketRef.current) return;
-    setMessages((prev) =>
-      mode === 'everyone'
-        ? prev.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, deletedAt: new Date().toISOString(), content: 'This message was unsent' }
-              : msg
-          )
-        : prev.filter((msg) => msg.id !== messageId)
-    );
-    socketRef.current.emit('unsend_message', { messageId, mode });
-  };
-
-  const handleHideUnsent = (messageId: number) => {
-    if (!socketRef.current) return;
-    setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
-    socketRef.current.emit('hide_unsent_message', { messageId });
-  };
-
-  const handleSendMessage = (content: string, replyToMessageId?: number | null) => {
+  const onSendMessage = (content: string, replyToMessageId?: number | null) => {
     if (!selectedFriend || !socketRef.current || !user) return;
     const tempMessage: MessageData = {
       id: Date.now(),
@@ -263,27 +126,34 @@ export default function ChatPage() {
       receiver: selectedFriend,
     };
     setMessages((prev) => [...prev, tempMessage]);
-    socketRef.current.emit("send_message", { receiverId: selectedFriend.id, content, replyToMessageId });
+    handleSendMessage(socketRef, selectedFriend, content, replyToMessageId);
   };
 
-  const handleEditMessage = (messageId: number, content: string) => {
+  const onUnsendMessage = (messageId: number, mode: 'me' | 'everyone') => {
+    if (!socketRef.current) return;
+    setMessages((prev) =>
+      mode === 'everyone'
+        ? prev.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, deletedAt: new Date().toISOString(), content: 'This message was unsent' }
+              : msg
+          )
+        : prev.filter((msg) => msg.id !== messageId)
+    );
+    handleUnsendMessage(socketRef, messageId, mode);
+  };
+
+  const onHideUnsent = (messageId: number) => {
+    if (!socketRef.current) return;
+    setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+    handleHideUnsent(socketRef, messageId);
+  };
+
+  const onEditMessage = (messageId: number, content: string) => {
     setMessages((prev) => prev.map((msg) =>
       msg.id === messageId ? { ...msg, content, editedAt: new Date().toISOString() } : msg
     ));
-    socketRef.current?.emit('edit_message', { messageId, content });
-  };
-
-  const handleToastClick = (senderId: number) => {
-    setToast(null);
-    const friend = friends.find((f) => f.id === senderId);
-    if (friend) selectFriend(friend);
-  };
-
-  const handleSidebarSearch = (q: string) => {
-    setSearchQuery(q);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (!q.trim()) { setSearchResults([]); setSearchDone(false); return; }
-    searchTimerRef.current = setTimeout(() => doSearch(q), 300);
+    handleEditMessage(socketRef, messageId, content);
   };
 
   if (loading) {
@@ -296,8 +166,6 @@ export default function ChatPage() {
 
   if (!user) return null;
 
-  const backToChats = () => { setSidebarView('chats'); setSearchQuery(''); setSearchResults([]); };
-
   return (
     <main className="flex-1 flex min-h-0 bg-slate-50 dark:bg-slate-950 overflow-hidden animate-fade-in">
       <aside className={`${selectedFriend && sidebarView === 'chats' ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-shrink-0`}>
@@ -308,7 +176,7 @@ export default function ChatPage() {
             searchLoading={searchLoading}
             searchDone={searchDone}
             onSearch={handleSidebarSearch}
-            onSelect={selectFriend}
+            onSelect={onSelectFriend}
             onSendRequest={handleSendRequest}
             onBack={backToChats}
           />
@@ -336,8 +204,8 @@ export default function ChatPage() {
             pendingRequests={pendingRequests}
             messageRequests={messageRequests}
             onSearch={handleSearch}
-            onSelectFriend={selectFriend}
-            onSelectUser={selectFriend}
+            onSelectFriend={onSelectFriend}
+            onSelectUser={onSelectFriend}
             onSendRequest={handleSendRequest}
             onViewFriendRequests={() => { setSidebarView('friendRequests'); fetchPendingRequests(); }}
             onViewMessageRequests={() => { setSidebarView('messageRequests'); fetchMessageRequests(); }}
@@ -351,19 +219,48 @@ export default function ChatPage() {
           <ChatArea
             friend={selectedFriend}
             messages={messages}
+            callLogs={callLogs}
             loading={messagesLoading}
             currentUserId={user.id}
-            onSend={handleSendMessage}
-            onUnsend={handleUnsendMessage}
-            onHideUnsent={handleHideUnsent}
-            onEdit={handleEditMessage}
+            onSend={onSendMessage}
+            onUnsend={onUnsendMessage}
+            onHideUnsent={onHideUnsent}
+            onEdit={onEditMessage}
             onBack={() => setSelectedFriend(null)}
+            onAudioCall={() => startCall(selectedFriend.id, selectedFriend.name, 'audio')}
+            onVideoCall={() => startCall(selectedFriend.id, selectedFriend.name, 'video')}
           />
         ) : (
           <ChatEmptyState view={sidebarView} />
         )}
       </section>
-      <NotificationToast notification={toast} onClose={() => setToast(null)} onClick={handleToastClick} />
+      <NotificationToast notification={toast} onClose={() => setToast(null)} onClick={onToastClick} />
+
+      {callState.status !== 'idle' && (
+        <CallOverlay
+          status={callState.status}
+          type={callState.type}
+          peerName={callState.peerName}
+          localStream={localStream}
+          remoteStream={remoteStream}
+          isMuted={callState.isMuted}
+          isVideoOff={callState.isVideoOff}
+          isScreenSharing={callState.isScreenSharing}
+          onEndCall={endCall}
+          onToggleMute={toggleMute}
+          onToggleVideo={toggleVideo}
+          onToggleScreenShare={toggleScreenShare}
+        />
+      )}
+
+      {incomingCall && (
+        <IncomingCallDialog
+          callerName={incomingCall.callerName}
+          callType={incomingCall.type}
+          onAccept={() => { acceptCall(incomingCall.callerId, incomingCall.type); setIncomingCall(null); }}
+          onReject={() => { rejectCall(incomingCall.callerId); setIncomingCall(null); }}
+        />
+      )}
     </main>
   );
 }

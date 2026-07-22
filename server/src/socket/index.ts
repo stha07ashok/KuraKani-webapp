@@ -5,11 +5,14 @@ import { ensureFirebaseInitialized } from '../config/firebaseAdmin';
 import User from '../models/userModel';
 import Message from '../models/Message';
 import FriendRequest from '../models/FriendRequest';
+import CallLog from '../models/CallLog';
 import { Op } from 'sequelize';
 
 interface AuthSocket extends Socket {
   userId?: number;
 }
+
+const activeCalls = new Map<string, { callerId: number; receiverId: number; type: 'audio' | 'video'; callLogId: number; startedAt?: Date }>();
 
 export function setupSocket(httpServer: HTTPServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
@@ -167,8 +170,107 @@ export function setupSocket(httpServer: HTTPServer): SocketIOServer {
       }
     });
 
+    socket.on('call_user', async (data: { receiverId: number; type: 'audio' | 'video' }) => {
+      const user = await User.findByPk(userId, { attributes: ['id', 'name'] });
+      const callerName = user?.name ?? `User ${userId}`;
+      io.to(`user:${data.receiverId}`).emit('incoming_call', { callerId: userId, callerName, type: data.type });
+
+      try {
+        const callLog = await CallLog.create({
+          callerId: userId,
+          receiverId: data.receiverId,
+          type: data.type,
+          status: 'missed',
+        });
+        const key = `${userId}-${data.receiverId}`;
+        activeCalls.set(key, { callerId: userId, receiverId: data.receiverId, type: data.type, callLogId: callLog.id });
+      } catch (error) {
+        console.error('Socket call_user create error:', error);
+      }
+    });
+
+    socket.on('accept_call', async (data: { callerId: number }) => {
+      io.to(`user:${data.callerId}`).emit('call_accepted', { calleeId: userId });
+
+      try {
+        const key1 = `${data.callerId}-${userId}`;
+        const key2 = `${userId}-${data.callerId}`;
+        const active = activeCalls.get(key1) || activeCalls.get(key2);
+        if (active) {
+          await CallLog.update({ status: 'answered', startedAt: new Date() }, { where: { id: active.callLogId } });
+          active.startedAt = new Date();
+          activeCalls.set(key2, active);
+        }
+      } catch (error) {
+        console.error('Socket accept_call update error:', error);
+      }
+    });
+
+    socket.on('reject_call', async (data: { callerId: number }) => {
+      io.to(`user:${data.callerId}`).emit('call_rejected', { calleeId: userId });
+
+      try {
+        const key = `${data.callerId}-${userId}`;
+        const active = activeCalls.get(key);
+        if (active) {
+          await CallLog.update({ status: 'rejected' }, { where: { id: active.callLogId } });
+          activeCalls.delete(key);
+        }
+      } catch (error) {
+        console.error('Socket reject_call update error:', error);
+      }
+    });
+
+    socket.on('offer', (data: { receiverId: number; offer: any }) => {
+      io.to(`user:${data.receiverId}`).emit('offer', { offer: data.offer, senderId: userId });
+    });
+
+    socket.on('answer', (data: { receiverId: number; answer: any }) => {
+      io.to(`user:${data.receiverId}`).emit('answer', { answer: data.answer, senderId: userId });
+    });
+
+    socket.on('ice_candidate', (data: { receiverId: number; candidate: any }) => {
+      io.to(`user:${data.receiverId}`).emit('ice_candidate', { candidate: data.candidate, senderId: userId });
+    });
+
+    socket.on('end_call', async (data: { receiverId: number }) => {
+      io.to(`user:${data.receiverId}`).emit('call_ended', { senderId: userId });
+
+      try {
+        const key1 = `${userId}-${data.receiverId}`;
+        const key2 = `${data.receiverId}-${userId}`;
+        const active = activeCalls.get(key1) || activeCalls.get(key2);
+        if (active) {
+          const endedAt = new Date();
+          const duration = active.startedAt ? Math.round((endedAt.getTime() - active.startedAt.getTime()) / 1000) : null;
+          await CallLog.update({ status: 'answered', endedAt, duration }, { where: { id: active.callLogId } });
+          activeCalls.delete(key1);
+          activeCalls.delete(key2);
+        }
+      } catch (error) {
+        console.error('Socket end_call update error:', error);
+      }
+    });
+
+    socket.on('toggle_screen_share', (data: { receiverId: number; active: boolean }) => {
+      io.to(`user:${data.receiverId}`).emit('screen_share_toggled', { senderId: userId, active: data.active });
+    });
+
+    socket.on('toggle_mute', (data: { receiverId: number; kind: 'audio' | 'video'; muted: boolean }) => {
+      io.to(`user:${data.receiverId}`).emit('mute_toggled', { senderId: userId, kind: data.kind, muted: data.muted });
+    });
+
     socket.on('disconnect', () => {
       console.log(`User ${userId} disconnected`);
+      activeCalls.forEach((active, key) => {
+        if (key.startsWith(`${userId}-`) || key.endsWith(`-${userId}`)) {
+          const peerId = key.startsWith(`${userId}-`)
+            ? parseInt(key.split('-')[1])
+            : parseInt(key.split('-')[0]);
+          io.to(`user:${peerId}`).emit('call_ended', { senderId: userId });
+          activeCalls.delete(key);
+        }
+      });
     });
   });
 

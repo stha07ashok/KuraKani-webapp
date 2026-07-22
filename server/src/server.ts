@@ -7,6 +7,7 @@ import authRoutes from './routes/authRoutes';
 import userSearchRoutes from './routes/userSearchRoutes';
 import friendRequestRoutes from './routes/friendRequestRoutes';
 import messageRoutes from './routes/messageRoutes';
+import callRoutes from './routes/callRoutes';
 import { setupSocket } from './socket';
 
 const app = express();
@@ -25,6 +26,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userSearchRoutes);
 app.use('/api/friend-requests', friendRequestRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/calls', callRoutes);
 
 setupSocket(httpServer);
 
@@ -33,7 +35,7 @@ const start = async (): Promise<void> => {
     await sequelize.authenticate();
     console.log('Database connection has been established successfully.');
 
-    await sequelize.sync({ alter: true });
+    await sequelize.sync();
     console.log('All models were synchronized successfully.');
 
     httpServer.listen(PORT, () => {

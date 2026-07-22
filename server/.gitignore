@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.env
+KuraKani_firebase.json
+*.log

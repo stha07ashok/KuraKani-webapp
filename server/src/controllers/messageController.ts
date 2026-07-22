@@ -70,13 +70,6 @@ export const getConversation = async (req: AuthRequest, res: Response): Promise<
       order: [['createdAt', 'ASC']],
     });
 
-    await Message.update(
-      { readAt: new Date() },
-      {
-        where: { senderId: userId, receiverId: req.user!.id, readAt: null },
-      }
-    );
-
     const visibleMessages = filterVisibleMessages(messages, req.user!.id);
     res.json(visibleMessages);
   } catch (error) {

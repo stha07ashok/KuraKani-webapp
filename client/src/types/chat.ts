@@ -70,9 +70,24 @@ export interface UserAvatarProps {
   className?: string;
 }
 
+export interface CallLogEntry {
+  id: number;
+  callerId: number;
+  receiverId: number;
+  type: 'audio' | 'video';
+  status: 'missed' | 'answered' | 'rejected';
+  startedAt?: string | null;
+  endedAt?: string | null;
+  duration?: number | null;
+  createdAt: string;
+  caller?: { id: number; name: string; profilePicture?: string };
+  receiver?: { id: number; name: string; profilePicture?: string };
+}
+
 export interface ChatAreaProps {
   friend: BaseUser;
   messages: MessageData[];
+  callLogs: CallLogEntry[];
   loading: boolean;
   currentUserId: number;
   onSend: (content: string, replyToMessageId?: number | null) => void;
@@ -80,6 +95,8 @@ export interface ChatAreaProps {
   onHideUnsent: (messageId: number) => void;
   onEdit: (messageId: number, content: string) => void;
   onBack: () => void;
+  onAudioCall?: (peerId: number, peerName: string) => void;
+  onVideoCall?: (peerId: number, peerName: string) => void;
 }
 
 export interface ChatSidebarProps {

@@ -1,6 +1,7 @@
 import User from './userModel';
 import FriendRequest from './FriendRequest';
 import Message from './Message';
+import CallLog from './CallLog';
 
 User.hasMany(FriendRequest, { as: 'sentRequests', foreignKey: 'senderId' });
 User.hasMany(FriendRequest, { as: 'receivedRequests', foreignKey: 'receiverId' });
@@ -12,3 +13,8 @@ User.hasMany(Message, { as: 'receivedMessages', foreignKey: 'receiverId' });
 Message.belongsTo(User, { as: 'sender', foreignKey: 'senderId' });
 Message.belongsTo(User, { as: 'receiver', foreignKey: 'receiverId' });
 Message.belongsTo(Message, { as: 'replyTo', foreignKey: 'replyToId' });
+
+User.hasMany(CallLog, { as: 'outgoingCalls', foreignKey: 'callerId' });
+User.hasMany(CallLog, { as: 'incomingCalls', foreignKey: 'receiverId' });
+CallLog.belongsTo(User, { as: 'caller', foreignKey: 'callerId' });
+CallLog.belongsTo(User, { as: 'receiver', foreignKey: 'receiverId' });

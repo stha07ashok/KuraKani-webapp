@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ArrowLeft, MessageCircle, Send, Loader2, Check, X, CornerUpLeft, MoreVertical, Pencil, Trash2, ChevronRight } from "lucide-react";
+import { ArrowLeft, MessageCircle, Send, Loader2, Check, X, CornerUpLeft, MoreVertical, Pencil, Trash2, ChevronRight, Phone, Video, PhoneMissed, PhoneOff, PhoneIncoming } from "lucide-react";
 import UserAvatar from "./UserAvatar";
-import type { MessageData, ChatAreaProps } from "@/types/chat";
+import type { MessageData, CallLogEntry, ChatAreaProps } from "@/types/chat";
 
-export default function ChatArea({ friend, messages, loading, currentUserId, onSend, onUnsend, onHideUnsent, onEdit, onBack }: ChatAreaProps) {
+export default function ChatArea({ friend, messages, callLogs, loading, currentUserId, onSend, onUnsend, onHideUnsent, onEdit, onBack, onAudioCall, onVideoCall }: ChatAreaProps) {
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<MessageData | null>(null);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
@@ -11,11 +11,61 @@ export default function ChatArea({ friend, messages, loading, currentUserId, onS
   const [menuView, setMenuView] = useState<{ id: number; view: 'main' | 'unsend' } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const displayMessages = useMemo(() => messages, [messages]);
+  type TimelineItem = { kind: 'message'; msg: MessageData } | { kind: 'call'; log: CallLogEntry };
+
+  const timeline = useMemo(() => {
+    const items: TimelineItem[] = [
+      ...messages.map((m) => ({ kind: 'message' as const, msg: m })),
+      ...callLogs.map((c) => ({ kind: 'call' as const, log: c })),
+    ];
+    items.sort((a, b) => {
+      const aTime = a.kind === 'message' ? new Date(a.msg.createdAt).getTime() : new Date(a.log.createdAt).getTime();
+      const bTime = b.kind === 'message' ? new Date(b.msg.createdAt).getTime() : new Date(b.log.createdAt).getTime();
+      return aTime - bTime;
+    });
+    return items;
+  }, [messages, callLogs]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [displayMessages]);
+  }, [timeline]);
+
+  const renderCallLog = (log: CallLogEntry) => {
+    const isOutgoing = log.callerId === currentUserId;
+    const missed = log.status === 'missed';
+    const rejected = log.status === 'rejected';
+    const duration = log.duration ? `${Math.floor(log.duration / 60)}:${String(log.duration % 60).padStart(2, '0')}` : null;
+
+    let icon: React.ReactNode;
+    let label: string;
+    let color: string;
+
+    if (isOutgoing) {
+      if (missed) { icon = <PhoneMissed className="w-4 h-4" />; label = 'No answer'; color = 'text-red-500'; }
+      else if (rejected) { icon = <PhoneOff className="w-4 h-4" />; label = 'Call rejected'; color = 'text-rose-500'; }
+      else { icon = <Phone className="w-4 h-4" />; label = duration ? `Outgoing call, ${duration}` : 'Outgoing call'; color = 'text-emerald-500'; }
+    } else {
+      if (missed) { icon = <PhoneMissed className="w-4 h-4" />; label = 'Missed call'; color = 'text-red-500'; }
+      else if (rejected) { icon = <PhoneOff className="w-4 h-4" />; label = `You rejected the call`; color = 'text-rose-500'; }
+      else { icon = <PhoneIncoming className="w-4 h-4" />; label = duration ? `Incoming call, ${duration}` : 'Incoming call'; color = 'text-emerald-500'; }
+    }
+
+    return (
+      <div className="flex justify-center py-2 animate-fade-in-up" key={`call-${log.id}`}>
+        <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <span className={color}>{icon}</span>
+          <span className="text-xs text-slate-600 dark:text-slate-400">{label}</span>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">
+            {new Date(log.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [timeline]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,9 +109,17 @@ export default function ChatArea({ friend, messages, loading, currentUserId, onS
           <ArrowLeft className="w-5 h-5 text-slate-600 dark:text-slate-300" />
         </button>
         <UserAvatar name={friend.name} profilePicture={friend.profilePicture} size={36} className="ring-2 ring-indigo-500/20" />
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900 dark:text-white">{friend.name}</p>
           <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Online</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => onAudioCall?.(friend.id, friend.name)} className="p-2.5 rounded-full text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all" title="Voice Call">
+            <Phone className="w-4 h-4" />
+          </button>
+          <button onClick={() => onVideoCall?.(friend.id, friend.name)} className="p-2.5 rounded-full text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all" title="Video Call">
+            <Video className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -70,7 +128,7 @@ export default function ChatArea({ friend, messages, loading, currentUserId, onS
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
           </div>
-        ) : displayMessages.length === 0 ? (
+        ) : timeline.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <MessageCircle className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
             <p className="text-sm text-slate-500 dark:text-slate-400">No messages yet</p>
@@ -78,7 +136,11 @@ export default function ChatArea({ friend, messages, loading, currentUserId, onS
           </div>
         ) : (
           <>
-            {displayMessages.map((msg) => {
+            {timeline.map((item) => {
+              if (item.kind === 'call') {
+                return renderCallLog(item.log);
+              }
+              const msg = item.msg;
               const isMine = msg.senderId === currentUserId;
               const unsent = isUnsent(msg);
               return (
