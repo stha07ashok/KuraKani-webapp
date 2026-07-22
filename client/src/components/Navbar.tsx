@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { MessageCircle, Menu, X, Sun, Moon, LogOut, User as UserIcon } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,6 +19,8 @@ export default function Navbar() {
   const { theme, toggle } = useTheme();
   const { user, signOut } = useAuth();
   const profileRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const isChat = pathname.startsWith("/chat");
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -33,17 +36,17 @@ export default function Navbar() {
     <nav className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80 border-b border-slate-200/50 dark:border-slate-700/50 animate-fade-in-down">
       <div className="px-5 sm:px-8">
         <div className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-500/20 group-hover:shadow-lg group-hover:shadow-indigo-500/30 transition-shadow">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-500/20">
               <MessageCircle className="w-5 h-5" />
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 bg-clip-text text-transparent">
               KuraKani
             </span>
-          </Link>
+          </div>
 
           <div className="hidden md:flex items-center gap-6">
-            {navLinks.map((link) => (
+            {!isChat && navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -180,7 +183,7 @@ export default function Navbar() {
         {isOpen && (
           <div className="md:hidden pb-4 border-t border-slate-200/50 dark:border-slate-700/50 animate-fade-in">
             <div className="flex flex-col gap-1 pt-4">
-              {navLinks.map((link) => (
+              {!isChat && navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}

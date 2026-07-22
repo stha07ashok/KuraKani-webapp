@@ -12,11 +12,12 @@ interface MessageAttributes {
   deletedAt?: Date | null;
   deletedForSenderAt?: Date | null;
   deletedForReceiverAt?: Date | null;
+  editedAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-interface MessageCreationAttributes extends Optional<MessageAttributes, 'id' | 'isMessageRequest' | 'readAt' | 'replyToId' | 'deletedAt' | 'deletedForSenderAt' | 'deletedForReceiverAt'> {}
+interface MessageCreationAttributes extends Optional<MessageAttributes, 'id' | 'isMessageRequest' | 'readAt' | 'replyToId' | 'deletedAt' | 'deletedForSenderAt' | 'deletedForReceiverAt' | 'editedAt'> {}
 
 class Message extends Model<MessageAttributes, MessageCreationAttributes> implements MessageAttributes {
   public id!: number;
@@ -29,6 +30,7 @@ class Message extends Model<MessageAttributes, MessageCreationAttributes> implem
   public deletedAt!: Date | null;
   public deletedForSenderAt!: Date | null;
   public deletedForReceiverAt!: Date | null;
+  public editedAt!: Date | null;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -45,6 +47,7 @@ Message.init(
     deletedAt: { type: DataTypes.DATE, allowNull: true },
     deletedForSenderAt: { type: DataTypes.DATE, allowNull: true },
     deletedForReceiverAt: { type: DataTypes.DATE, allowNull: true },
+    editedAt: { type: DataTypes.DATE, allowNull: true },
   },
   { sequelize, tableName: 'messages' }
 );

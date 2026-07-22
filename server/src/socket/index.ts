@@ -119,6 +119,21 @@ export function setupSocket(httpServer: HTTPServer): SocketIOServer {
       }
     });
 
+    socket.on('edit_message', async (data: { messageId: number; content: string }) => {
+      try {
+        const message = await Message.findByPk(data.messageId);
+        if (!message || message.senderId !== userId) return;
+
+        const now = new Date();
+        await message.update({ content: data.content, editedAt: now });
+
+        io.to(`user:${message.senderId}`).emit('message_edited', { messageId: data.messageId, content: data.content, editedAt: now.toISOString() });
+        io.to(`user:${message.receiverId}`).emit('message_edited', { messageId: data.messageId, content: data.content, editedAt: now.toISOString() });
+      } catch (error) {
+        console.error('Socket edit_message error:', error);
+      }
+    });
+
     socket.on('hide_unsent_message', async (data: { messageId: number }) => {
       try {
         const message = await Message.findByPk(data.messageId);

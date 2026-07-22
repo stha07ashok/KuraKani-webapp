@@ -51,6 +51,7 @@ interface MessageData {
   deletedAt?: string | null;
   deletedForSenderAt?: string | null;
   deletedForReceiverAt?: string | null;
+  editedAt?: string | null;
   sender?: { id: number; name: string; email: string; profilePicture?: string };
   receiver?: { id: number; name: string; email: string; profilePicture?: string };
 }
@@ -152,6 +153,12 @@ export default function ChatPage() {
 
       socket.on('message_unsent_hidden', (data: { messageId: number }) => {
         setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
+      });
+
+      socket.on('message_edited', (data: { messageId: number; content: string; editedAt: string }) => {
+        setMessages((prev) => prev.map((msg) =>
+          msg.id === data.messageId ? { ...msg, content: data.content, editedAt: data.editedAt } : msg
+        ));
       });
 
       socket.on('message_deleted', (data: { messageId: number }) => {
@@ -306,6 +313,13 @@ export default function ChatPage() {
     socketRef.current.emit("send_message", { receiverId: selectedFriend.id, content, replyToMessageId });
   };
 
+  const handleEditMessage = (messageId: number, content: string) => {
+    setMessages((prev) => prev.map((msg) =>
+      msg.id === messageId ? { ...msg, content, editedAt: new Date().toISOString() } : msg
+    ));
+    socketRef.current?.emit('edit_message', { messageId, content });
+  };
+
   const handleToastClick = (senderId: number) => {
     setToast(null);
     const friend = friends.find((f) => f.id === senderId);
@@ -332,7 +346,7 @@ export default function ChatPage() {
   const backToChats = () => { setSidebarView('chats'); setSearchQuery(''); setSearchResults([]); };
 
   return (
-    <main className="flex-1 flex h-[calc(100vh-4rem)] bg-slate-50 dark:bg-slate-950 overflow-hidden animate-fade-in">
+    <main className="flex-1 flex min-h-0 bg-slate-50 dark:bg-slate-950 overflow-hidden animate-fade-in">
       <aside className={`${selectedFriend && sidebarView === 'chats' ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-shrink-0`}>
         {sidebarView === 'search' ? (
           <SearchPanel
@@ -408,7 +422,7 @@ export default function ChatPage() {
         )}
       </aside>
 
-      <section className="flex-1 flex flex-col bg-white dark:bg-slate-900">
+      <section className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900">
         {selectedFriend && sidebarView === 'chats' ? (
           <ChatArea
             friend={selectedFriend}
@@ -418,6 +432,7 @@ export default function ChatPage() {
             onSend={handleSendMessage}
             onUnsend={handleUnsendMessage}
             onHideUnsent={handleHideUnsent}
+            onEdit={handleEditMessage}
             onBack={() => setSelectedFriend(null)}
           />
         ) : (
