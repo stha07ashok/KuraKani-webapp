@@ -92,6 +92,66 @@ export function setupSocket(httpServer: HTTPServer): SocketIOServer {
       }
     });
 
+    socket.on('unsend_message', async (data: { messageId: number; mode: 'me' | 'everyone' }) => {
+      try {
+        const message = await Message.findByPk(data.messageId);
+        if (!message) return;
+
+        if (data.mode === 'everyone') {
+          await message.update({
+            deletedAt: new Date(),
+            content: 'This message was unsent',
+          });
+        } else if (message.senderId === userId) {
+          await message.update({ deletedForSenderAt: new Date() });
+        } else {
+          await message.update({ deletedForReceiverAt: new Date() });
+        }
+
+        const targetRooms = data.mode === 'everyone'
+          ? [`user:${message.senderId}`, `user:${message.receiverId}`]
+          : [`user:${userId}`];
+
+        io.to(targetRooms).emit('message_unsent', { messageId: data.messageId, mode: data.mode });
+      } catch (error) {
+        console.error('Socket unsend_message error:', error);
+        socket.emit('error', { message: 'Failed to unsend message' });
+      }
+    });
+
+    socket.on('hide_unsent_message', async (data: { messageId: number }) => {
+      try {
+        const message = await Message.findByPk(data.messageId);
+        if (!message) return;
+
+        if (message.senderId === userId) {
+          await message.update({ deletedForSenderAt: new Date() });
+        } else {
+          await message.update({ deletedForReceiverAt: new Date() });
+        }
+
+        io.to(`user:${userId}`).emit('message_unsent_hidden', { messageId: data.messageId });
+      } catch (error) {
+        console.error('Socket hide_unsent_message error:', error);
+      }
+    });
+
+    socket.on('delete_message', async (data: { messageId: number }) => {
+      try {
+        const message = await Message.findByPk(data.messageId);
+        if (!message) return;
+        if (message.senderId !== userId) return;
+
+        await Message.destroy({ where: { id: data.messageId } });
+
+        io.to(`user:${message.senderId}`).emit('message_deleted', { messageId: data.messageId });
+        io.to(`user:${message.receiverId}`).emit('message_deleted', { messageId: data.messageId });
+      } catch (error) {
+        console.error('Socket delete_message error:', error);
+        socket.emit('error', { message: 'Failed to delete message' });
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log(`User ${userId} disconnected`);
     });

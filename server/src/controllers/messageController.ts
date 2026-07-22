@@ -5,6 +5,13 @@ import FriendRequest from '../models/FriendRequest';
 import User from '../models/userModel';
 import { Op } from 'sequelize';
 
+const filterVisibleMessages = (messages: any[], currentUserId: number) => {
+  return messages.filter((message) => {
+    if (currentUserId === message.senderId) return !message.deletedForSenderAt;
+    return !message.deletedForReceiverAt;
+  });
+};
+
 export const sendMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { receiverId, content, replyToMessageId } = req.body;
@@ -70,10 +77,38 @@ export const getConversation = async (req: AuthRequest, res: Response): Promise<
       }
     );
 
-    res.json(messages);
+    const visibleMessages = filterVisibleMessages(messages, req.user!.id);
+    res.json(visibleMessages);
   } catch (error) {
     console.error('Get conversation error:', error);
     res.status(500).json({ message: 'Error fetching conversation' });
+  }
+};
+
+export const getUnreadCounts = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+
+    const messages = await Message.findAll({
+      where: {
+        receiverId: userId,
+        isMessageRequest: false,
+        readAt: null,
+        deletedAt: null,
+        deletedForReceiverAt: null,
+      },
+      attributes: ['senderId'],
+    });
+
+    const counts: Record<number, number> = {};
+    (messages as any[]).forEach((msg) => {
+      counts[msg.senderId] = (counts[msg.senderId] || 0) + 1;
+    });
+
+    res.json(counts);
+  } catch (error) {
+    console.error('Get unread counts error:', error);
+    res.status(500).json({ message: 'Error fetching unread counts' });
   }
 };
 
@@ -87,7 +122,9 @@ export const getMessageRequests = async (req: AuthRequest, res: Response): Promi
       order: [['createdAt', 'DESC']],
     });
 
-    const grouped = messages.reduce((acc: any[], msg) => {
+    const visibleMessages = filterVisibleMessages(messages, req.user!.id);
+
+    const grouped = visibleMessages.reduce((acc: any[], msg) => {
       const m = msg as any;
       const existing = acc.find((g: any) => g.sender.id === m.senderId);
       if (existing) {

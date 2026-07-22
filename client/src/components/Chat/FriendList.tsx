@@ -13,10 +13,11 @@ interface FriendListProps {
   friends: Friend[];
   loading: boolean;
   selectedFriendId?: number;
+  unreadCounts: Record<number, number>;
   onSelect: (friend: Friend) => void;
 }
 
-export default function FriendList({ friends, loading, selectedFriendId, onSelect }: FriendListProps) {
+export default function FriendList({ friends, loading, selectedFriendId, unreadCounts, onSelect }: FriendListProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -39,16 +40,34 @@ export default function FriendList({ friends, loading, selectedFriendId, onSelec
     <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
       {friends.map((friend) => (
         <button key={friend.id} onClick={() => onSelect(friend)}
-          className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all text-left ${
+          className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all text-left relative ${
             selectedFriendId === friend.id
               ? "bg-indigo-50 dark:bg-indigo-900/30 shadow-sm"
               : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
           }`}>
-          <UserAvatar name={friend.name} profilePicture={friend.profilePicture} />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{friend.name}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{friend.email}</p>
+          <div className="relative">
+            <UserAvatar name={friend.name} profilePicture={friend.profilePicture} />
+            {unreadCounts[friend.id] > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1 shadow-lg shadow-red-500/30">
+                {unreadCounts[friend.id] > 99 ? '99+' : unreadCounts[friend.id]}
+              </span>
+            )}
           </div>
+          <div className="min-w-0 flex-1">
+            <p className={`text-sm truncate ${
+              unreadCounts[friend.id] > 0
+                ? "font-bold text-slate-900 dark:text-white"
+                : "font-semibold text-slate-900 dark:text-white"
+            }`}>{friend.name}</p>
+            <p className={`text-xs truncate ${
+              unreadCounts[friend.id] > 0
+                ? "text-slate-600 dark:text-slate-300 font-medium"
+                : "text-slate-500 dark:text-slate-400"
+            }`}>{friend.email}</p>
+          </div>
+          {unreadCounts[friend.id] > 0 && (
+            <div className="w-2 h-2 rounded-full bg-indigo-500 absolute right-3 top-1/2 -translate-y-1/2" />
+          )}
         </button>
       ))}
     </div>

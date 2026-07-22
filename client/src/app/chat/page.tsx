@@ -14,6 +14,7 @@ import RequestList from "@/components/Chat/RequestList";
 import MessageRequestList from "@/components/Chat/MessageRequestList";
 import ChatArea from "@/components/Chat/ChatArea";
 import SearchSuggestions from "@/components/Chat/SearchSuggestions";
+import NotificationToast, { type ToastNotification } from "@/components/Chat/NotificationToast";
 
 interface SearchedUser {
   id: number;
@@ -47,6 +48,9 @@ interface MessageData {
   isMessageRequest: boolean;
   readAt: string | null;
   createdAt: string;
+  deletedAt?: string | null;
+  deletedForSenderAt?: string | null;
+  deletedForReceiverAt?: string | null;
   sender?: { id: number; name: string; email: string; profilePicture?: string };
   receiver?: { id: number; name: string; email: string; profilePicture?: string };
 }
@@ -62,11 +66,16 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, loading, signOut, getToken } = useAuth();
   const socketRef = useRef<any>(null);
+  const friendsRef = useRef<Friend[]>([]);
+  const selectedFriendRef = useRef<Friend | null>(null);
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [sidebarView, setSidebarView] = useState<SidebarView>('chats');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+
+  friendsRef.current = friends;
+  selectedFriendRef.current = selectedFriend;
   const [friendsLoading, setFriendsLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -79,6 +88,8 @@ export default function ChatPage() {
 
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
+  const [toast, setToast] = useState<ToastNotification | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -93,30 +104,62 @@ export default function ChatPage() {
       socketRef.current = socket;
 
       socket.on("new_message", (msg: MessageData) => {
-        if (selectedFriend && msg.senderId === selectedFriend.id) {
+        const curFriend = selectedFriendRef.current;
+        if (curFriend && msg.senderId === curFriend.id) {
           setMessages((prev) => [...prev, msg]);
-          socket.emit("mark_as_read", { friendId: selectedFriend.id });
+          socket.emit("mark_as_read", { friendId: curFriend.id });
+        } else {
+          setUnreadCounts((prev) => ({ ...prev, [msg.senderId]: (prev[msg.senderId] || 0) + 1 }));
+          const friend = friendsRef.current.find((f) => f.id === msg.senderId);
+          if (friend) {
+            setToast({ id: msg.id, senderId: msg.senderId, senderName: friend.name, senderPicture: friend.profilePicture, content: msg.content });
+          }
         }
       });
 
       socket.on("message_sent", (msg: MessageData) => {
         setMessages((prev) => {
+          const hasTempMessage = prev.some((m) => m.senderId === msg.senderId && m.content === msg.content && m.id !== msg.id);
+          if (hasTempMessage) {
+            return prev.map((m) => (m.senderId === msg.senderId && m.content === msg.content && m.id !== msg.id) ? msg : m);
+          }
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
       });
 
       socket.on("messages_read", (data: { readerId: number }) => {
-        if (!selectedFriend || data.readerId !== selectedFriend.id) return;
+        const curFriend = selectedFriendRef.current;
+        if (!curFriend || data.readerId !== curFriend.id) return;
         setMessages((prev) => prev.map((msg) => (
           msg.senderId === user.id && msg.receiverId === data.readerId && !msg.readAt
             ? { ...msg, readAt: new Date().toISOString() }
             : msg
         )));
       });
+
+      socket.on("message_unsent", (data: { messageId: number; mode: 'me' | 'everyone' }) => {
+        setMessages((prev) =>
+          data.mode === 'everyone'
+            ? prev.map((msg) =>
+                msg.id === data.messageId
+                  ? { ...msg, deletedAt: new Date().toISOString(), content: 'This message was unsent' }
+                  : msg
+              )
+            : prev.filter((msg) => msg.id !== data.messageId)
+        );
+      });
+
+      socket.on('message_unsent_hidden', (data: { messageId: number }) => {
+        setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
+      });
+
+      socket.on('message_deleted', (data: { messageId: number }) => {
+        setMessages((prev) => prev.filter((msg) => msg.id !== data.messageId));
+      });
     })();
     return () => disconnectSocket();
-  }, [user, getToken, selectedFriend]);
+  }, [user, getToken]);
 
   const apiFetch = useCallback(async (url: string, options?: RequestInit) => {
     const token = await getToken();
@@ -146,13 +189,19 @@ export default function ChatPage() {
     if (data) setMessageRequests(data);
   }, [apiFetch]);
 
+  const fetchUnreadCounts = useCallback(async () => {
+    const data = await apiFetch("/api/messages/unread/counts");
+    if (data) setUnreadCounts(data);
+  }, [apiFetch]);
+
   useEffect(() => {
     if (user) {
       fetchFriends();
       fetchPendingRequests();
       fetchMessageRequests();
+      fetchUnreadCounts();
     }
-  }, [user, fetchFriends, fetchPendingRequests, fetchMessageRequests]);
+  }, [user, fetchFriends, fetchPendingRequests, fetchMessageRequests, fetchUnreadCounts]);
 
   const doSearch = useCallback(async (q: string) => {
     setSearchLoading(true);
@@ -206,12 +255,33 @@ export default function ChatPage() {
     setSearchResults([]);
     setSearchDone(false);
     setMessagesLoading(true);
+    setUnreadCounts((prev) => ({ ...prev, [friend.id]: 0 }));
     const data = await apiFetch(`/api/messages/${friend.id}`);
     if (data) setMessages(data);
     setMessagesLoading(false);
     if (socketRef.current) {
       socketRef.current.emit('mark_as_read', { friendId: friend.id });
     }
+  };
+
+  const handleUnsendMessage = (messageId: number, mode: 'me' | 'everyone') => {
+    if (!socketRef.current) return;
+    setMessages((prev) =>
+      mode === 'everyone'
+        ? prev.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, deletedAt: new Date().toISOString(), content: 'This message was unsent' }
+              : msg
+          )
+        : prev.filter((msg) => msg.id !== messageId)
+    );
+    socketRef.current.emit('unsend_message', { messageId, mode });
+  };
+
+  const handleHideUnsent = (messageId: number) => {
+    if (!socketRef.current) return;
+    setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+    socketRef.current.emit('hide_unsent_message', { messageId });
   };
 
   const handleSendMessage = (content: string, replyToMessageId?: number | null) => {
@@ -234,6 +304,12 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, tempMessage]);
     socketRef.current.emit("send_message", { receiverId: selectedFriend.id, content, replyToMessageId });
+  };
+
+  const handleToastClick = (senderId: number) => {
+    setToast(null);
+    const friend = friends.find((f) => f.id === senderId);
+    if (friend) selectFriend(friend);
   };
 
   const handleSidebarSearch = (q: string) => {
@@ -318,7 +394,7 @@ export default function ChatPage() {
               </div>
               <SearchSuggestions results={searchResults} onSelect={selectFriend} onSendRequest={handleSendRequest} />
             </div>
-            <FriendList friends={friends} loading={friendsLoading} selectedFriendId={selectedFriend?.id} onSelect={selectFriend} />
+            <FriendList friends={friends} loading={friendsLoading} selectedFriendId={selectedFriend?.id} unreadCounts={unreadCounts} onSelect={selectFriend} />
             <div className="p-3 border-t border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">
                 <UserAvatar name={user.name} profilePicture={user.profilePicture} size={36} className="ring-2 ring-indigo-500/20" />
@@ -340,6 +416,8 @@ export default function ChatPage() {
             loading={messagesLoading}
             currentUserId={user.id}
             onSend={handleSendMessage}
+            onUnsend={handleUnsendMessage}
+            onHideUnsent={handleHideUnsent}
             onBack={() => setSelectedFriend(null)}
           />
         ) : (
@@ -361,6 +439,7 @@ export default function ChatPage() {
           </div>
         )}
       </section>
+      <NotificationToast notification={toast} onClose={() => setToast(null)} onClick={handleToastClick} />
     </main>
   );
 }
